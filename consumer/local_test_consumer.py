@@ -156,7 +156,7 @@ def main():
 
     # Subscribe to all CDC topics
     topics = ['cdc.customers', 'cdc.products', 'cdc.orders',
-              'cdc.order_items', 'cdc.inventory_transactions']
+              'cdc.order_items', 'cdc.inventory_transactions', 'cdc.linkedin_jobs']
 
     print("\n" + "="*80)
     print("LOCAL TEST CONSUMER")

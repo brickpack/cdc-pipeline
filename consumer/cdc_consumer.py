@@ -421,7 +421,7 @@ def main():
 
     # Subscribe to CDC topics (adjust pattern as needed)
     topics = ['cdc.customers', 'cdc.products', 'cdc.orders',
-              'cdc.order_items', 'cdc.inventory_transactions']
+              'cdc.order_items', 'cdc.inventory_transactions', 'cdc.linkedin_jobs']
 
     consumer.subscribe_to_topics(topics)
     consumer.run()

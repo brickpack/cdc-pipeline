@@ -12,7 +12,7 @@
     "database.server.name": "dbserver",
 
     "topic.prefix": "dbserver",
-    "table.include.list": "public.customers,public.products,public.orders,public.order_items,public.inventory_transactions",
+    "table.include.list": "public.customers,public.products,public.orders,public.order_items,public.inventory_transactions,public.linkedin_jobs",
 
     "plugin.name": "pgoutput",
     "publication.name": "dbz_publication",

@@ -1,9 +1,10 @@
 # CDC Pipeline with Debezium, Kafka, and Snowflake
 
-A production-ready Change Data Capture (CDC) pipeline that captures real-time changes from PostgreSQL using Debezium, streams them through Kafka, and loads them into Snowflake for analytics.
+A production-ready Change Data Capture (CDC) pipeline that ingests data from external APIs (LinkedIn Jobs via RapidAPI), stores it in PostgreSQL, captures changes using Debezium, streams them through Kafka, and loads them into Snowflake for analytics.
 
 ## Features
 
+- **API Data Ingestion**: Automated fetching from RapidAPI JSearch LinkedIn API
 - **Real-time CDC**: Capture database changes with sub-second latency
 - **Scalable Architecture**: Built on Kafka for horizontal scalability
 - **Schema Evolution**: Automatic schema management and evolution
@@ -15,6 +16,10 @@ A production-ready Change Data Capture (CDC) pipeline that captures real-time ch
 ## Architecture
 
 ```
+RapidAPI JSearch LinkedIn
+    ↓
+API Ingestion Service
+    ↓
 PostgreSQL (Source DB)
     ↓
 Debezium Connector (CDC)
@@ -55,7 +60,24 @@ The setup script will:
 - Deploy Debezium connector
 - Optionally start monitoring stack
 
-### 2. Configure Snowflake (Optional)
+### 2. Configure RapidAPI (Required)
+
+Get your RapidAPI key and configure the LinkedIn job ingestion:
+
+1. Sign up at https://rapidapi.com
+2. Subscribe to JSearch LinkedIn API: https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch
+3. Edit `.env` with your API key:
+
+```bash
+RAPIDAPI_KEY=your_rapidapi_key_here
+
+# Optional: Customize search parameters
+SEARCH_QUERIES=software engineer,data engineer,python developer
+SEARCH_LOCATION=United States
+SCHEDULE_INTERVAL_MINUTES=60
+```
+
+### 3. Configure Snowflake (Optional)
 
 If you want to load data into Snowflake, edit `.env` with your credentials:
 
@@ -68,7 +90,7 @@ SNOWFLAKE_SCHEMA=PUBLIC
 SNOWFLAKE_WAREHOUSE=COMPUTE_WH
 ```
 
-### 3. Test Locally (Without Snowflake)
+### 4. Test Locally (Without Snowflake)
 
 ```bash
 # Install Python dependencies
@@ -79,7 +101,30 @@ pip install -r requirements.txt
 python local_test_consumer.py
 ```
 
-### 4. Generate Test Data
+### 5. View Ingested LinkedIn Jobs
+
+The API ingestion service automatically fetches LinkedIn jobs. View them in PostgreSQL:
+
+```bash
+# Connect to PostgreSQL
+docker exec -it postgres psql -U postgres -d sourcedb
+
+# View recent jobs
+SELECT job_id, job_title, company_name, location, posted_date
+FROM linkedin_jobs
+ORDER BY first_seen_at DESC
+LIMIT 10;
+
+# View jobs by company
+SELECT company_name, COUNT(*) as job_count
+FROM linkedin_jobs
+GROUP BY company_name
+ORDER BY job_count DESC;
+```
+
+### 6. Generate Additional Test Data
+
+You can also insert test data into the sample tables:
 
 ```bash
 # Connect to PostgreSQL
@@ -109,6 +154,12 @@ cdc-pipeline/
 ├── setup.sh                     # Automated setup script
 ├── shutdown.sh                  # Graceful shutdown script
 ├── .env.example                 # Environment variables template
+│
+├── api-ingestion/               # LinkedIn API data ingestion
+│   ├── linkedin_ingestion.py   # API ingestion service
+│   ├── requirements.txt        # Python dependencies
+│   ├── Dockerfile              # Container image
+│   └── README.md               # API ingestion documentation
 │
 ├── init-scripts/                # PostgreSQL initialization
 │   ├── 01-create-schema.sql    # Database schema
