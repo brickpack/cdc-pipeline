@@ -195,7 +195,6 @@ services:
     networks:
       - cdc-network
     restart: unless-stopped
-
   # CDC Consumer - Python service that reads from Kafka and writes to Snowflake
   cdc-consumer:
     build:
