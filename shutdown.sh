@@ -37,12 +37,12 @@ echo
 REMOVE_VOLUMES=$REPLY
 
 # Stop monitoring stack
-if docker-compose -f docker-compose.monitoring.yml ps | grep -q "Up"; then
+if docker compose -f docker-compose.monitoring.yml ps 2>/dev/null | grep -q "Up"; then
     print_info "Stopping monitoring stack..."
     if [[ $REMOVE_VOLUMES =~ ^[Yy]$ ]]; then
-        docker-compose -f docker-compose.monitoring.yml down -v
+        docker compose -f docker-compose.monitoring.yml down -v
     else
-        docker-compose -f docker-compose.monitoring.yml down
+        docker compose -f docker-compose.monitoring.yml down
     fi
     print_info "Monitoring stack stopped"
 fi
@@ -50,10 +50,10 @@ fi
 # Stop core services
 print_info "Stopping core services..."
 if [[ $REMOVE_VOLUMES =~ ^[Yy]$ ]]; then
-    docker-compose down -v
+    docker compose down -v
     print_warn "All data has been removed"
 else
-    docker-compose down
+    docker compose down
     print_info "Data volumes preserved"
 fi
 

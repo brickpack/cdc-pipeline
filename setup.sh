@@ -34,11 +34,12 @@ check_docker() {
 
 # Check if Docker Compose is installed
 check_docker_compose() {
-    if ! command -v docker-compose &> /dev/null; then
-        print_error "Docker Compose is not installed. Please install Docker Compose first."
+    if ! docker compose version &> /dev/null; then
+        print_error "Docker Compose is not installed or not available as 'docker compose'."
+        print_error "Please install Docker Compose v2 or ensure Docker Desktop is updated."
         exit 1
     fi
-    print_info "Docker Compose is installed: $(docker-compose --version)"
+    print_info "Docker Compose is installed: $(docker compose version)"
 }
 
 # Check if .env file exists
@@ -56,7 +57,7 @@ check_env_file() {
 # Start core services
 start_core_services() {
     print_info "Starting core CDC services..."
-    docker-compose up -d
+    docker compose up -d
     print_info "Core services started"
 }
 
@@ -113,7 +114,7 @@ deploy_connector() {
 # Start monitoring stack
 start_monitoring() {
     print_info "Starting monitoring stack..."
-    docker-compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+    docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
     print_info "Monitoring stack started"
 }
 
@@ -128,7 +129,7 @@ display_info() {
     echo "  - Kafka UI:        http://localhost:8080"
     echo "  - Kafka Connect:   http://localhost:8083"
     echo "  - Schema Registry: http://localhost:8081"
-    echo "  - Grafana:         http://localhost:3000 (admin/admin)"
+    echo "  - Grafana:         http://localhost:3001 (admin/admin)"
     echo "  - Prometheus:      http://localhost:9090"
     echo "  - AlertManager:    http://localhost:9093"
     echo ""
@@ -139,11 +140,11 @@ display_info() {
     echo "  - Password: postgres"
     echo ""
     echo "Useful Commands:"
-    echo "  - View logs:           docker-compose logs -f"
+    echo "  - View logs:           docker compose logs -f"
     echo "  - Check connector:     ./connectors/check-connector.sh"
     echo "  - Test consumer:       cd consumer && python local_test_consumer.py"
-    echo "  - Stop all:            docker-compose down"
-    echo "  - Stop with volumes:   docker-compose down -v"
+    echo "  - Shutdown:            ./shutdown.sh"
+    echo "  - Full teardown:       ./teardown.sh"
     echo ""
 }
 
