@@ -14,13 +14,17 @@ import time
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 from collections import defaultdict
+from pathlib import Path
 
 from confluent_kafka import Consumer, KafkaError, KafkaException
 from confluent_kafka.avro import AvroConsumer
 from confluent_kafka.avro.serializer import SerializerError
+import json
 import snowflake.connector
 from snowflake.connector import DictCursor
 from snowflake.connector.errors import ProgrammingError, DatabaseError
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
 
 
 # Configure logging
@@ -48,18 +52,68 @@ class SnowflakeWriter:
     def connect(self):
         """Establish connection to Snowflake"""
         try:
-            self.connection = snowflake.connector.connect(
-                account=self.config['account'],
-                user=self.config['user'],
-                password=self.config['password'],
-                database=self.config['database'],
-                schema=self.config['schema'],
-                warehouse=self.config['warehouse'],
-                autocommit=False
-            )
+            # Set environment variable to bypass OCSP check in Docker
+            os.environ['SNOWFLAKE_OCSP_FAIL_OPEN'] = 'TRUE'
+
+            connection_params = {
+                'account': self.config['account'],
+                'user': self.config['user'],
+                'database': self.config['database'],
+                'schema': self.config['schema'],
+                'warehouse': self.config['warehouse'],
+                'autocommit': False,
+                # Disable OCSP check - required for Docker containers
+                # This bypasses certificate revocation checking which can fail in containerized environments
+                'ocsp_response_cache_filename': None,
+                'insecure_mode': True  # Temporarily disable SSL verification for testing
+            }
+
+            # Use private key authentication if private_key_path is provided
+            if self.config.get('private_key_path'):
+                private_key = self._load_private_key(
+                    self.config['private_key_path'],
+                    self.config.get('private_key_passphrase')
+                )
+                connection_params['private_key'] = private_key
+                logger.info("Using private key authentication")
+            elif self.config.get('password'):
+                connection_params['password'] = self.config['password']
+                logger.info("Using password authentication")
+            else:
+                raise ValueError("Either password or private_key_path must be provided")
+
+            self.connection = snowflake.connector.connect(**connection_params)
             logger.info("Connected to Snowflake successfully")
         except Exception as e:
             logger.error(f"Failed to connect to Snowflake: {e}")
+            raise
+
+    def _load_private_key(self, key_path: str, passphrase: Optional[str] = None):
+        """Load and decode private key for Snowflake authentication"""
+        try:
+            with open(key_path, 'rb') as key_file:
+                private_key_data = key_file.read()
+
+            # Parse the private key
+            password = passphrase.encode() if passphrase else None
+            private_key = serialization.load_pem_private_key(
+                private_key_data,
+                password=password,
+                backend=default_backend()
+            )
+
+            # Encode to DER format (required by Snowflake)
+            pkb = private_key.private_bytes(
+                encoding=serialization.Encoding.DER,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption()
+            )
+
+            logger.info(f"Successfully loaded private key from {key_path}")
+            return pkb
+
+        except Exception as e:
+            logger.error(f"Failed to load private key: {e}")
             raise
 
     def ensure_table_exists(self, table_name: str, sample_record: Dict[str, Any]):
@@ -69,6 +123,11 @@ class SnowflakeWriter:
 
         try:
             cursor = self.connection.cursor()
+
+            # Build fully qualified table name
+            database = self.config['database']
+            schema = self.config['schema']
+            qualified_table_name = f"{database}.{schema}.{table_name}"
 
             # Create table with CDC metadata columns
             columns = []
@@ -85,13 +144,13 @@ class SnowflakeWriter:
             ])
 
             create_sql = f"""
-                CREATE TABLE IF NOT EXISTS {table_name} (
+                CREATE TABLE IF NOT EXISTS {qualified_table_name} (
                     {', '.join(columns)}
                 )
             """
 
             cursor.execute(create_sql)
-            logger.info(f"Ensured table exists: {table_name}")
+            logger.info(f"Ensured table exists: {qualified_table_name}")
 
             self.table_cache.add(table_name)
             cursor.close()
@@ -125,6 +184,11 @@ class SnowflakeWriter:
         try:
             cursor = self.connection.cursor()
 
+            # Build fully qualified table name
+            database = self.config['database']
+            schema = self.config['schema']
+            qualified_table_name = f"{database}.{schema}.{table_name}"
+
             # Ensure table exists
             if records[0].get('after'):
                 self.ensure_table_exists(table_name, records[0]['after'])
@@ -145,11 +209,11 @@ class SnowflakeWriter:
 
             # Execute operations
             if inserts:
-                self._execute_inserts(cursor, table_name, inserts)
+                self._execute_inserts(cursor, qualified_table_name, inserts)
             if updates:
-                self._execute_updates(cursor, table_name, updates)
+                self._execute_updates(cursor, qualified_table_name, updates)
             if deletes:
-                self._execute_deletes(cursor, table_name, deletes)
+                self._execute_deletes(cursor, qualified_table_name, deletes)
 
             self.connection.commit()
             logger.info(f"Batch written to {table_name}: {len(inserts)} inserts, "
@@ -165,7 +229,7 @@ class SnowflakeWriter:
     def _execute_inserts(self, cursor, table_name: str, records: List[Dict]):
         """Execute INSERT operations"""
         for record in records:
-            data = record['after']
+            data = record['after'].copy()  # Make a copy to avoid modifying original
             data['_cdc_operation'] = record['op']
             data['_cdc_timestamp'] = datetime.fromtimestamp(record['ts_ms'] / 1000.0)
             data['_cdc_source_lsn'] = record.get('source', {}).get('lsn', 0)
@@ -174,16 +238,13 @@ class SnowflakeWriter:
             placeholders = ', '.join(['%s'] * len(data))
             values = list(data.values())
 
-            # Use MERGE for idempotency
-            merge_sql = f"""
-                MERGE INTO {table_name} AS target
-                USING (SELECT {placeholders} AS values) AS source
-                ON FALSE
-                WHEN NOT MATCHED THEN
-                    INSERT ({columns}) VALUES ({placeholders})
+            # Use simple INSERT
+            insert_sql = f"""
+                INSERT INTO {table_name} ({columns})
+                VALUES ({placeholders})
             """
 
-            cursor.execute(merge_sql, values * 2)
+            cursor.execute(insert_sql, values)
 
     def _execute_updates(self, cursor, table_name: str, records: List[Dict]):
         """Execute UPDATE operations"""
@@ -276,13 +337,14 @@ class CDCConsumer:
                 'bootstrap.servers': os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092'),
                 'group.id': os.getenv('CONSUMER_GROUP_ID', 'cdc-consumer-group'),
                 'auto.offset.reset': 'earliest',
-                'enable.auto.commit': False,
-                'schema.registry.url': os.getenv('SCHEMA_REGISTRY_URL', 'http://localhost:8081')
+                'enable.auto.commit': False
             },
             'snowflake': {
                 'account': os.getenv('SNOWFLAKE_ACCOUNT'),
                 'user': os.getenv('SNOWFLAKE_USER'),
                 'password': os.getenv('SNOWFLAKE_PASSWORD'),
+                'private_key_path': os.getenv('SNOWFLAKE_PRIVATE_KEY_PATH'),
+                'private_key_passphrase': os.getenv('SNOWFLAKE_PRIVATE_KEY_PASSPHRASE'),
                 'database': os.getenv('SNOWFLAKE_DATABASE', 'CDC_DB'),
                 'schema': os.getenv('SNOWFLAKE_SCHEMA', 'PUBLIC'),
                 'warehouse': os.getenv('SNOWFLAKE_WAREHOUSE', 'COMPUTE_WH')
@@ -293,10 +355,11 @@ class CDCConsumer:
             }
         }
 
-    def _create_consumer(self) -> AvroConsumer:
+    def _create_consumer(self) -> Consumer:
         """Create and configure Kafka consumer"""
         try:
-            consumer = AvroConsumer(self.config['kafka'])
+            # Use regular Consumer for JSON messages from Debezium
+            consumer = Consumer(self.config['kafka'])
             logger.info("Kafka consumer created successfully")
             return consumer
         except Exception as e:
@@ -320,9 +383,16 @@ class CDCConsumer:
     def process_message(self, message):
         """Process a single CDC message"""
         try:
-            value = message.value()
-            if value is None:
+            raw_value = message.value()
+            if raw_value is None:
                 return
+
+            # Decode JSON message from Debezium
+            message_json = json.loads(raw_value.decode('utf-8'))
+
+            # Extract payload from Debezium message structure
+            # Debezium wraps the actual CDC data in a "payload" field
+            value = message_json.get('payload', message_json)
 
             # Extract table name from topic
             topic = message.topic()
@@ -335,8 +405,8 @@ class CDCConsumer:
             if len(self.message_buffer[table_name]) >= self.batch_size:
                 self._flush_buffer(table_name)
 
-        except SerializerError as e:
-            logger.error(f"Serialization error: {e}")
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {e}")
         except Exception as e:
             logger.error(f"Error processing message: {e}")
             raise
@@ -409,11 +479,19 @@ class CDCConsumer:
 def main():
     """Main entry point"""
     # Check required environment variables
-    required_vars = ['SNOWFLAKE_ACCOUNT', 'SNOWFLAKE_USER', 'SNOWFLAKE_PASSWORD']
+    required_vars = ['SNOWFLAKE_ACCOUNT', 'SNOWFLAKE_USER']
     missing_vars = [var for var in required_vars if not os.getenv(var)]
 
     if missing_vars:
         logger.error(f"Missing required environment variables: {missing_vars}")
+        sys.exit(1)
+
+    # Validate authentication method
+    has_password = os.getenv('SNOWFLAKE_PASSWORD')
+    has_private_key = os.getenv('SNOWFLAKE_PRIVATE_KEY_PATH')
+
+    if not has_password and not has_private_key:
+        logger.error("Either SNOWFLAKE_PASSWORD or SNOWFLAKE_PRIVATE_KEY_PATH must be provided")
         sys.exit(1)
 
     # Create and run consumer
