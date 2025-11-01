@@ -216,7 +216,7 @@ After running `./setup.sh`, access the following UIs:
 | Kafka UI | http://localhost:8080 | - |
 | Kafka Connect | http://localhost:8083 | - |
 | Schema Registry | http://localhost:8081 | - |
-| Grafana | http://localhost:3000 | admin / admin |
+| Grafana | http://localhost:3001 | admin / admin |
 | Prometheus | http://localhost:9090 | - |
 | AlertManager | http://localhost:9093 | - |
 
@@ -294,7 +294,7 @@ docker-compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
 
 ### Access Grafana
 
-1. Open http://localhost:3000
+1. Open http://localhost:3001
 2. Login with admin / admin
 3. Navigate to Dashboards → CDC Pipeline Overview
 

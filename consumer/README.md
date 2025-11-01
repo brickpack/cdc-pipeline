@@ -92,14 +92,14 @@ After: {
 
 ### Using Docker Compose
 
-The consumer is already configured in `docker-compose.yml`:
+The consumer is already configured in `docker compose.yml`:
 
 ```bash
 # Start the entire stack
-docker-compose up -d
+docker compose up -d
 
 # View consumer logs
-docker-compose logs -f cdc-consumer
+docker compose logs -f cdc-consumer
 ```
 
 ### Running Locally
