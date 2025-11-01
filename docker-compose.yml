@@ -206,6 +206,9 @@ services:
       # Consumer configuration
       BATCH_SIZE: ${BATCH_SIZE:-100}
       POLL_TIMEOUT: ${POLL_TIMEOUT:-1.0}
+      MAX_RETRIES: ${MAX_RETRIES:-3}
+      RETRY_BACKOFF_BASE: ${RETRY_BACKOFF_BASE:-2.0}
+      DLQ_ENABLED: ${DLQ_ENABLED:-true}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # Disable OCSP for Snowflake (required for Docker environments)
       SNOWFLAKE_OCSP_FAIL_OPEN: "TRUE"

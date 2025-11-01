@@ -46,6 +46,9 @@ SNOWFLAKE_WAREHOUSE=COMPUTE_WH
 ```bash
 BATCH_SIZE=100              # Number of messages to batch before writing
 POLL_TIMEOUT=1.0            # Kafka poll timeout in seconds
+MAX_RETRIES=3               # Maximum retry attempts for failed writes
+RETRY_BACKOFF_BASE=2.0      # Exponential backoff base (wait = base^attempt seconds)
+DLQ_ENABLED=true            # Enable Dead Letter Queue for failed messages
 LOG_LEVEL=INFO              # Logging level (DEBUG, INFO, WARNING, ERROR)
 ```
 
@@ -170,10 +173,28 @@ WHERE primary_key = value
 ```
 
 ### 5. Error Handling
-- Serialization errors are logged and skipped
-- Database errors roll back the transaction
-- Uncommitted messages are reprocessed on restart
-- Fatal errors trigger graceful shutdown
+
+#### Retry Logic
+- **Automatic Retries**: Transient failures are automatically retried with exponential backoff
+- **Configurable Retries**: Set `MAX_RETRIES` (default: 3) and `RETRY_BACKOFF_BASE` (default: 2.0)
+- **Backoff Strategy**: Wait time = `backoff_base ^ attempt_number` seconds
+
+#### Dead Letter Queue (DLQ)
+- **Failed Messages**: Messages that fail after all retries are sent to DLQ topics
+- **DLQ Topic Format**: `dlq.{original_topic}` (e.g., `dlq.cdc.customers`)
+- **Error Metadata**: DLQ messages include original data, error reason, timestamp, and source topic/offset
+- **Offset Management**: Offsets are only committed after successful Snowflake writes, preventing data loss
+
+#### Error Types
+- **Serialization errors**: Logged and sent to DLQ immediately (no retry)
+- **Database errors**: Retried with exponential backoff, sent to DLQ if all retries fail
+- **Network errors**: Retried automatically
+- **Fatal errors**: Trigger graceful shutdown after flushing buffers
+
+#### Offset Commit Strategy
+- **At-Least-Once Guarantee**: Offsets committed only after successful Snowflake write
+- **No Data Loss**: Messages are never lost (either written to Snowflake or sent to DLQ)
+- **Prevents Duplicates**: Failed writes don't commit offsets, allowing reprocessing
 
 ## Schema Evolution
 

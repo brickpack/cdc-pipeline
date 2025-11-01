@@ -16,7 +16,7 @@ from datetime import datetime
 from collections import defaultdict
 from pathlib import Path
 
-from confluent_kafka import Consumer, KafkaError, KafkaException
+from confluent_kafka import Consumer, KafkaError, KafkaException, Producer
 from confluent_kafka.avro import AvroConsumer
 from confluent_kafka.avro.serializer import SerializerError
 import json
@@ -359,10 +359,14 @@ class CDCConsumer:
         self.running = True
         self.config = self._load_config()
         self.consumer = self._create_consumer()
+        self.dlq_producer = self._create_dlq_producer()
         self.snowflake_writer = SnowflakeWriter(self.config['snowflake'])
         self.batch_size = int(self.config['consumer']['batch_size'])
         self.poll_timeout = float(self.config['consumer']['poll_timeout'])
+        self.max_retries = int(self.config['consumer'].get('max_retries', 3))
+        self.retry_backoff_base = float(self.config['consumer'].get('retry_backoff_base', 2.0))
         self.message_buffer = defaultdict(list)
+        self.pending_offsets = defaultdict(list)  # Track offsets per table for commit after success
 
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -389,7 +393,10 @@ class CDCConsumer:
             },
             'consumer': {
                 'batch_size': os.getenv('BATCH_SIZE', '100'),
-                'poll_timeout': os.getenv('POLL_TIMEOUT', '1.0')
+                'poll_timeout': os.getenv('POLL_TIMEOUT', '1.0'),
+                'max_retries': os.getenv('MAX_RETRIES', '3'),
+                'retry_backoff_base': os.getenv('RETRY_BACKOFF_BASE', '2.0'),
+                'dlq_enabled': os.getenv('DLQ_ENABLED', 'true').lower() == 'true'
             }
         }
 
@@ -403,6 +410,22 @@ class CDCConsumer:
         except Exception as e:
             logger.error(f"Failed to create Kafka consumer: {e}")
             raise
+
+    def _create_dlq_producer(self) -> Optional[Producer]:
+        """Create Kafka producer for Dead Letter Queue"""
+        if not self.config['consumer'].get('dlq_enabled', True):
+            return None
+        
+        try:
+            producer_config = {
+                'bootstrap.servers': self.config['kafka']['bootstrap.servers']
+            }
+            producer = Producer(producer_config)
+            logger.info("DLQ producer created successfully")
+            return producer
+        except Exception as e:
+            logger.warning(f"Failed to create DLQ producer: {e}. DLQ disabled.")
+            return None
 
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals"""
@@ -436,8 +459,11 @@ class CDCConsumer:
             topic = message.topic()
             table_name = topic.split('.')[-1]
 
-            # Add to buffer
-            self.message_buffer[table_name].append(value)
+            # Store message and offset for later commit (only after successful write)
+            self.message_buffer[table_name].append({
+                'data': value,
+                'message': message  # Keep reference to message for offset tracking
+            })
 
             # Process batch if buffer is full
             if len(self.message_buffer[table_name]) >= self.batch_size:
@@ -445,22 +471,96 @@ class CDCConsumer:
 
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error: {e}")
+            # Send malformed messages to DLQ immediately
+            self._send_to_dlq(message, f"JSON decode error: {e}")
+            # Commit offset even for malformed messages to prevent infinite retry
+            self.consumer.commit(message)
         except Exception as e:
             logger.error(f"Error processing message: {e}")
             raise
 
     def _flush_buffer(self, table_name: str):
-        """Flush buffered messages to Snowflake"""
+        """Flush buffered messages to Snowflake with retry logic"""
         if not self.message_buffer[table_name]:
             return
 
+        records_with_offsets = self.message_buffer[table_name]
+        records = [r['data'] for r in records_with_offsets]
+        messages = [r['message'] for r in records_with_offsets]
+        
+        # Retry logic with exponential backoff
+        attempt = 0
+        last_error = None
+        
+        while attempt <= self.max_retries:
+            try:
+                # Write to Snowflake
+                self.snowflake_writer.write_batch(table_name, records)
+                
+                # SUCCESS: Commit Kafka offsets only after successful Snowflake write
+                for message in messages:
+                    self.consumer.commit(message)
+                
+                logger.debug(f"Successfully flushed {len(records)} records for {table_name}, offsets committed")
+                
+                # Clear buffer on success
+                self.message_buffer[table_name] = []
+                return
+                
+            except Exception as e:
+                last_error = e
+                attempt += 1
+                
+                if attempt <= self.max_retries:
+                    backoff_time = self.retry_backoff_base ** attempt
+                    logger.warning(
+                        f"Failed to flush buffer for {table_name} (attempt {attempt}/{self.max_retries}): {e}. "
+                        f"Retrying in {backoff_time:.1f}s..."
+                    )
+                    time.sleep(backoff_time)
+                else:
+                    logger.error(f"Failed to flush buffer for {table_name} after {self.max_retries} retries: {e}")
+        
+        # All retries exhausted - send to DLQ
+        logger.error(f"All retries exhausted for {table_name}. Sending {len(messages)} messages to DLQ")
+        for i, message in enumerate(messages):
+            error_msg = f"Failed after {self.max_retries} retries: {last_error}"
+            self._send_to_dlq(message, error_msg, records[i] if i < len(records) else None)
+        
+        # Clear buffer even on failure to prevent infinite retries
+        self.message_buffer[table_name] = []
+
+    def _send_to_dlq(self, message, error_reason: str, record_data: Optional[Dict] = None):
+        """Send failed message to Dead Letter Queue"""
+        if not self.dlq_producer:
+            logger.warning(f"DLQ disabled, cannot send message to DLQ. Error: {error_reason}")
+            return
+        
         try:
-            records = self.message_buffer[table_name]
-            self.snowflake_writer.write_batch(table_name, records)
-            self.message_buffer[table_name] = []
+            topic = message.topic()
+            dlq_topic = f"dlq.{topic}"
+            
+            # Create DLQ message with original data + error metadata
+            dlq_payload = {
+                'original_topic': topic,
+                'original_partition': message.partition(),
+                'original_offset': message.offset(),
+                'error_reason': error_reason,
+                'error_timestamp': datetime.utcnow().isoformat(),
+                'original_data': record_data if record_data else message.value().decode('utf-8') if message.value() else None
+            }
+            
+            # Produce to DLQ topic
+            self.dlq_producer.produce(
+                dlq_topic,
+                value=json.dumps(dlq_payload).encode('utf-8'),
+                callback=lambda err, msg: logger.error(f"Failed to produce to DLQ: {err}") if err else None
+            )
+            self.dlq_producer.flush(timeout=5.0)
+            
+            logger.info(f"Message sent to DLQ topic {dlq_topic}: {error_reason}")
         except Exception as e:
-            logger.error(f"Failed to flush buffer for {table_name}: {e}")
-            raise
+            logger.error(f"Failed to send message to DLQ: {e}. Original error: {error_reason}")
 
     def run(self):
         """Main consumer loop"""
@@ -473,7 +573,8 @@ class CDCConsumer:
                 if message is None:
                     # Flush any pending buffers on timeout
                     for table_name in list(self.message_buffer.keys()):
-                        self._flush_buffer(table_name)
+                        if self.message_buffer[table_name]:
+                            self._flush_buffer(table_name)
                     continue
 
                 if message.error():
@@ -483,8 +584,8 @@ class CDCConsumer:
                         logger.error(f"Kafka error: {message.error()}")
                     continue
 
+                # Process message (offset commit happens inside _flush_buffer after successful Snowflake write)
                 self.process_message(message)
-                self.consumer.commit(message)
 
         except KeyboardInterrupt:
             logger.info("Consumer interrupted by user")
@@ -508,6 +609,9 @@ class CDCConsumer:
         # Close connections
         if self.consumer:
             self.consumer.close()
+        if self.dlq_producer:
+            self.dlq_producer.flush(timeout=10.0)
+            self.dlq_producer = None
         if self.snowflake_writer:
             self.snowflake_writer.close()
 

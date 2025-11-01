@@ -9,7 +9,8 @@ A production-ready Change Data Capture (CDC) pipeline that ingests data from ext
 - **Scalable Architecture**: Built on Kafka for horizontal scalability
 - **Schema Evolution**: Automatic schema management and evolution
 - **Monitoring & Observability**: Comprehensive monitoring with Prometheus, Grafana, and Loki
-- **Error Handling**: Robust error handling and retry mechanisms
+- **Error Handling**: Robust error handling with automatic retries and Dead Letter Queue (DLQ)
+- **Data Consistency**: At-least-once delivery guarantee with offset commit after successful writes
 - **Local Development**: Docker-based setup for easy local testing
 - **Production Ready**: Includes best practices for production deployment
 - **Complete CDC Support**: Handles INSERT, UPDATE, and DELETE operations correctly
