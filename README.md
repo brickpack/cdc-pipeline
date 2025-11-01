@@ -439,26 +439,146 @@ For production deployment on Kubernetes:
 
 ### Security Best Practices
 
-1. **Credentials Management**
-   - Use secrets management (AWS Secrets Manager, HashiCorp Vault)
-   - Never commit credentials to version control
-   - Rotate credentials regularly
+## 🔒 Security
 
-2. **Network Security**
-   - Enable TLS/SSL for Kafka, Connect, and Snowflake
-   - Use VPCs and security groups
-   - Implement network policies
+### Development vs Production Credentials
 
-3. **Access Control**
+This project includes **development credentials** for local Docker environments. These are safe for local development but **MUST be changed for production deployments**.
+
+#### Development Credentials (Local Use Only)
+
+The following credentials are configured for local development:
+
+| Service | Username | Password | Location |
+|---------|----------|----------|----------|
+| PostgreSQL | `postgres` | `postgres` | [docker-compose.yml](docker-compose.yml) |
+| Debezium User | `debezium` | `debezium_password` | [init-scripts/03-create-replication-user.sh](init-scripts/03-create-replication-user.sh) |
+| Grafana Admin | `admin` | `admin` | [docker-compose.monitoring.yml](docker-compose.monitoring.yml) |
+
+**⚠️ WARNING**: These credentials are:
+- Only for local Docker development
+- NOT suitable for production
+- Must be changed via environment variables for any non-local deployment
+
+#### Changing Credentials
+
+All credentials can be changed via the `.env` file:
+
+```bash
+# PostgreSQL Configuration
+POSTGRES_USER=your_secure_username
+POSTGRES_PASSWORD=your_secure_password
+POSTGRES_DB=sourcedb
+
+# Debezium Replication User
+DEBEZIUM_USER=your_debezium_user
+DEBEZIUM_PASSWORD=your_secure_debezium_password
+
+# Grafana Admin
+GRAFANA_ADMIN_USER=your_admin_username
+GRAFANA_ADMIN_PASSWORD=your_secure_admin_password
+```
+
+### Security Checklist for Production
+
+- [ ] Change all default passwords in `.env` file
+- [ ] Use Snowflake private key authentication instead of password
+- [ ] Enable TLS/SSL for all connections (Kafka, PostgreSQL, Snowflake)
+- [ ] Use secrets management system (AWS Secrets Manager, HashiCorp Vault, etc.)
+- [ ] Implement network isolation (VPCs, security groups, firewalls)
+- [ ] Enable Kafka authentication and authorization (SASL/ACLs)
+- [ ] Configure PostgreSQL SSL and strong authentication
+- [ ] Use Snowflake role-based access control (RBAC)
+- [ ] Enable audit logging on all systems
+- [ ] Implement data encryption at rest
+- [ ] Rotate credentials regularly (90 days recommended)
+- [ ] Use strong passwords (16+ characters, mixed case, numbers, symbols)
+- [ ] Never commit `.env` file or private keys to version control
+- [ ] Implement IP whitelisting where possible
+- [ ] Enable monitoring and alerting for security events
+
+### Sensitive Files Protection
+
+The repository is configured to ignore sensitive files:
+
+```gitignore
+# Environment variables with credentials
+.env
+
+# Snowflake private keys and certificates
+keys/
+*.p8
+*.pem
+*.key
+*.crt
+
+# Generated connector configurations (may contain credentials)
+connectors/postgres-connector.json
+```
+
+**Always verify** before committing:
+```bash
+git status --ignored
+```
+
+### Credentials Management Best Practices
+
+1. **Use Environment Variables**
+   - Never hardcode credentials in source code
+   - Use `.env` file for local development
+   - Use secrets management systems for production
+
+2. **Secrets Management Systems**
+   - AWS Secrets Manager
+   - HashiCorp Vault
+   - Azure Key Vault
+   - Google Cloud Secret Manager
+   - Kubernetes Secrets
+
+3. **Rotate Credentials Regularly**
+   - Database passwords: Every 90 days
+   - API keys: Every 180 days
+   - Snowflake private keys: Annually
+   - Service account credentials: When team members leave
+
+4. **Access Control**
    - Use principle of least privilege
-   - Enable Kafka ACLs
-   - Configure PostgreSQL authentication
+   - Enable Kafka ACLs for topic-level security
+   - Configure PostgreSQL row-level security if needed
    - Use Snowflake role-based access control
+   - Implement MFA for admin accounts
 
-4. **Data Protection**
+5. **Data Protection**
    - Enable encryption at rest and in transit
-   - Implement data masking for sensitive fields
-   - Configure audit logging
+   - Implement data masking for PII/sensitive fields
+   - Configure audit logging for compliance
+   - Use Snowflake data classification tags
+
+### Network Security
+
+For production deployments:
+
+1. **TLS/SSL Configuration**
+   ```bash
+   # Kafka
+   security.protocol=SSL
+   ssl.truststore.location=/path/to/truststore.jks
+
+   # PostgreSQL
+   sslmode=require
+
+   # Snowflake (automatic with private key auth)
+   ```
+
+2. **Firewall Rules**
+   - Restrict PostgreSQL access to Debezium connector only
+   - Limit Kafka access to authorized consumers/producers
+   - Use VPC peering for Snowflake connectivity
+
+3. **Network Segmentation**
+   - Separate networks for different components
+   - Use private subnets for databases
+   - Implement bastion hosts for administrative access
 
 ### High Availability
 
