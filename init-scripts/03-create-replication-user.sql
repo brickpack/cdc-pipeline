@@ -1,8 +1,17 @@
 -- Create replication user for Debezium connector
 -- This user needs specific permissions for CDC functionality
+-- Note: This script is templated and replaced by 03-create-replication-user.sh at runtime
 
 -- Create replication user
-CREATE USER debezium WITH PASSWORD 'debezium_password' REPLICATION;
+-- Password is set via DEBEZIUM_PASSWORD environment variable
+DO
+$$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_user WHERE usename = 'debezium') THEN
+        EXECUTE format('CREATE USER debezium WITH PASSWORD %L REPLICATION', current_setting('debezium.password'));
+    END IF;
+END
+$$;
 
 -- Grant necessary permissions
 GRANT USAGE ON SCHEMA public TO debezium;
