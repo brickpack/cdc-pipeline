@@ -3,17 +3,17 @@ Local Test Consumer for CDC Pipeline
 
 This consumer prints CDC events to console instead of writing to Snowflake.
 Useful for testing the pipeline locally without Snowflake credentials.
+
+Note: This consumer expects JSON-serialized messages from Debezium.
 """
 
 import os
 import sys
 import logging
 import signal
+import json
 from typing import List
 from confluent_kafka import Consumer, KafkaError
-from confluent_kafka.avro import AvroConsumer
-from confluent_kafka.avro.serializer import SerializerError
-import json
 
 
 # Configure logging
@@ -35,10 +35,10 @@ class LocalTestConsumer:
             'group.id': os.getenv('CONSUMER_GROUP_ID', 'local-test-consumer'),
             'auto.offset.reset': 'earliest',
             'enable.auto.commit': True,
-            'schema.registry.url': os.getenv('SCHEMA_REGISTRY_URL', 'http://localhost:8081')
         }
 
-        self.consumer = AvroConsumer(self.config)
+        # Use regular Consumer for JSON messages (not AvroConsumer)
+        self.consumer = Consumer(self.config)
 
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -96,10 +96,17 @@ class LocalTestConsumer:
     def process_message(self, message):
         """Process and display CDC message"""
         try:
-            value = message.value()
-            if value is None:
+            raw_value = message.value()
+            if raw_value is None:
                 logger.info("Received tombstone message (delete marker)")
                 return
+
+            # Decode JSON message from Debezium
+            message_json = json.loads(raw_value.decode('utf-8'))
+
+            # Extract payload from Debezium message structure
+            # Debezium wraps the actual CDC data in a "payload" field
+            value = message_json.get('payload', message_json)
 
             self.message_count += 1
             topic = message.topic()
@@ -111,8 +118,8 @@ class LocalTestConsumer:
 
             print(self.format_message(value))
 
-        except SerializerError as e:
-            logger.error(f"Serialization error: {e}")
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {e}")
         except Exception as e:
             logger.error(f"Error processing message: {e}", exc_info=True)
 
@@ -162,8 +169,9 @@ def main():
     print("LOCAL TEST CONSUMER")
     print("="*80)
     print(f"Kafka: {os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092')}")
-    print(f"Schema Registry: {os.getenv('SCHEMA_REGISTRY_URL', 'http://localhost:8081')}")
+    print(f"Consumer Group: {os.getenv('CONSUMER_GROUP_ID', 'local-test-consumer')}")
     print(f"Topics: {', '.join(topics)}")
+    print(f"Format: JSON (Debezium)")
     print("="*80 + "\n")
 
     consumer.subscribe_to_topics(topics)
