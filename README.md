@@ -79,7 +79,11 @@ SCHEDULE_INTERVAL_MINUTES=60
 
 ### 3. Configure Snowflake (Optional)
 
-If you want to load data into Snowflake, edit `.env` with your credentials:
+If you want to load data into Snowflake, you have two authentication options:
+
+**Option A: Password Authentication**
+
+Edit `.env` with your credentials:
 
 ```bash
 SNOWFLAKE_ACCOUNT=your_account
@@ -89,6 +93,27 @@ SNOWFLAKE_DATABASE=CDC_DB
 SNOWFLAKE_SCHEMA=PUBLIC
 SNOWFLAKE_WAREHOUSE=COMPUTE_WH
 ```
+
+**Option B: Private Key Authentication (Recommended for Production)**
+
+For enhanced security, use private key authentication:
+
+1. Generate a key pair (see [keys/README.md](keys/README.md) for detailed instructions)
+2. Register the public key with Snowflake
+3. Edit `.env`:
+
+```bash
+SNOWFLAKE_ACCOUNT=your_account.region
+SNOWFLAKE_USER=your_username
+SNOWFLAKE_PRIVATE_KEY_HOST_PATH=/path/to/your/snowflake_key.p8
+SNOWFLAKE_PRIVATE_KEY_PATH=/app/keys/snowflake_key.p8
+SNOWFLAKE_PRIVATE_KEY_PASSPHRASE=your_passphrase  # Leave empty if no passphrase
+SNOWFLAKE_DATABASE=CDC_DB
+SNOWFLAKE_SCHEMA=PUBLIC
+SNOWFLAKE_WAREHOUSE=COMPUTE_WH
+```
+
+The pipeline will automatically detect and use private key authentication if configured.
 
 ### 4. Test Locally (Without Snowflake)
 

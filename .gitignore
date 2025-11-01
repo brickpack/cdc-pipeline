@@ -215,6 +215,13 @@ logs/
 tmp/
 temp/
 
+# Snowflake private keys and certificates
+keys/
+*.p8
+*.pem
+*.key
+*.crt
+
 # macOS
 .DS_Store
 

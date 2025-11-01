@@ -75,8 +75,6 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: sourcedb
-      # Enable logical replication for Debezium
-      POSTGRES_INITDB_ARGS: "-c wal_level=logical"
     command:
       - "postgres"
       - "-c"
@@ -108,31 +106,16 @@ services:
     ports:
       - "8083:8083"
     environment:
-      BOOTSTRAP_SERVERS: 'kafka:29092'
+      BOOTSTRAP_SERVERS: kafka:29092
       GROUP_ID: connect-cluster
       CONFIG_STORAGE_TOPIC: connect-configs
       OFFSET_STORAGE_TOPIC: connect-offsets
       STATUS_STORAGE_TOPIC: connect-status
-      # Replication factors (use 1 for single broker)
-      CONFIG_STORAGE_REPLICATION_FACTOR: 1
-      OFFSET_STORAGE_REPLICATION_FACTOR: 1
-      STATUS_STORAGE_REPLICATION_FACTOR: 1
-      # Connect to Schema Registry
-      KEY_CONVERTER: io.confluent.connect.avro.AvroConverter
-      VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
-      CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
-      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
-      # Internal converters
-      INTERNAL_KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
-      INTERNAL_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
-      # Connector configuration
-      CONNECT_REST_ADVERTISED_HOST_NAME: connect
-      CONNECT_PLUGIN_PATH: /kafka/connect,/kafka/libs
-      # Logging
-      CONNECT_LOG4J_ROOT_LOGLEVEL: INFO
-      CONNECT_LOG4J_LOGGERS: org.apache.kafka.connect.runtime.rest=WARN,org.reflections=ERROR
-    volumes:
-      - ./connectors:/kafka/connect
+      # Converters - Using JSON for now (can switch to Avro later)
+      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: false
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: true
     networks:
       - cdc-network
     healthcheck:
@@ -211,7 +194,12 @@ services:
       # Snowflake configuration (set these in .env file)
       SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT}
       SNOWFLAKE_USER: ${SNOWFLAKE_USER}
+      # Password authentication (legacy - use private key instead)
       SNOWFLAKE_PASSWORD: ${SNOWFLAKE_PASSWORD}
+      # Private key authentication (recommended)
+      SNOWFLAKE_PRIVATE_KEY_PATH: ${SNOWFLAKE_PRIVATE_KEY_PATH}
+      SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${SNOWFLAKE_PRIVATE_KEY_PASSPHRASE}
+      # Snowflake database settings
       SNOWFLAKE_DATABASE: ${SNOWFLAKE_DATABASE:-CDC_DB}
       SNOWFLAKE_SCHEMA: ${SNOWFLAKE_SCHEMA:-PUBLIC}
       SNOWFLAKE_WAREHOUSE: ${SNOWFLAKE_WAREHOUSE:-COMPUTE_WH}
@@ -219,9 +207,13 @@ services:
       BATCH_SIZE: ${BATCH_SIZE:-100}
       POLL_TIMEOUT: ${POLL_TIMEOUT:-1.0}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Disable OCSP for Snowflake (required for Docker environments)
+      SNOWFLAKE_OCSP_FAIL_OPEN: "TRUE"
     volumes:
       - ./consumer:/app
       - consumer-logs:/var/log/cdc-consumer
+      # Mount Snowflake private key (if using key-pair authentication)
+      - ${SNOWFLAKE_PRIVATE_KEY_HOST_PATH:-./keys/snowflake_key.p8}:${SNOWFLAKE_PRIVATE_KEY_PATH:-/app/keys/snowflake_key.p8}:ro
     networks:
       - cdc-network
     restart: unless-stopped
