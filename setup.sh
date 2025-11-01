@@ -86,10 +86,17 @@ wait_for_services() {
     done
     print_info "Schema Registry is ready"
 
-    # Wait for Kafka Connect
+    # Wait for Kafka Connect (with timeout)
     print_info "Waiting for Kafka Connect..."
+    CONNECT_TIMEOUT=30
+    CONNECT_ELAPSED=0
     until curl -s http://localhost:8083/ &> /dev/null; do
         sleep 2
+        CONNECT_ELAPSED=$((CONNECT_ELAPSED + 2))
+        if [ $CONNECT_ELAPSED -ge $CONNECT_TIMEOUT ]; then
+            print_warn "Kafka Connect did not start within ${CONNECT_TIMEOUT}s - skipping (optional for LinkedIn ingestion)"
+            return 0
+        fi
     done
     print_info "Kafka Connect is ready"
 }
@@ -155,7 +162,13 @@ main() {
     # Setup pipeline
     start_core_services
     wait_for_services
-    deploy_connector
+
+    # Only deploy connector if Connect is running
+    if curl -s http://localhost:8083/ &> /dev/null; then
+        deploy_connector
+    else
+        print_warn "Skipping connector deployment (Kafka Connect not available)"
+    fi
 
     # Ask about monitoring
     read -p "Do you want to start the monitoring stack? (y/n) " -n 1 -r
