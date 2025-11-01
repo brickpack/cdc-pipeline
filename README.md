@@ -12,6 +12,7 @@ A production-ready Change Data Capture (CDC) pipeline that ingests data from ext
 - **Error Handling**: Robust error handling and retry mechanisms
 - **Local Development**: Docker-based setup for easy local testing
 - **Production Ready**: Includes best practices for production deployment
+- **Complete CDC Support**: Handles INSERT, UPDATE, and DELETE operations correctly
 
 ## Architecture
 

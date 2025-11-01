@@ -255,7 +255,17 @@ class SnowflakeWriter:
             # Get primary key from source metadata or use first column
             pk_fields = self._get_primary_key(record)
 
-            set_clause = ', '.join([f"{k} = %s" for k in after_data.keys()])
+            # Validate that primary key exists in after_data
+            missing_pk = [pk for pk in pk_fields if pk not in after_data]
+            if missing_pk:
+                logger.error(f"Primary key fields {missing_pk} not found in after_data for table {table_name}")
+                continue
+
+            # Build SET clause excluding primary key fields (PK shouldn't change)
+            set_fields = {k: v for k, v in after_data.items() if k not in pk_fields}
+            set_clause = ', '.join([f"{k} = %s" for k in set_fields.keys()])
+            
+            # Build WHERE clause using primary key from after_data
             where_clause = ' AND '.join([f"{k} = %s" for k in pk_fields])
 
             update_sql = f"""
@@ -268,14 +278,21 @@ class SnowflakeWriter:
             """
 
             values = (
-                list(after_data.values()) +
+                list(set_fields.values()) +
                 [record['op'],
                  datetime.fromtimestamp(record['ts_ms'] / 1000.0),
                  record.get('source', {}).get('lsn', 0)] +
-                [before_data.get(k) for k in pk_fields]
+                [after_data.get(k) for k in pk_fields]  # Use after_data, not before_data
             )
 
             cursor.execute(update_sql, values)
+            
+            # Check if update actually matched any rows
+            rows_affected = cursor.rowcount
+            if rows_affected == 0:
+                logger.warning(f"UPDATE matched 0 rows for table {table_name}, PK values: {[after_data.get(k) for k in pk_fields]}")
+            else:
+                logger.debug(f"UPDATE affected {rows_affected} row(s) for table {table_name}")
 
     def _execute_deletes(self, cursor, table_name: str, records: List[Dict]):
         """Execute DELETE operations"""
@@ -294,17 +311,38 @@ class SnowflakeWriter:
         # Try to get from source metadata
         source = record.get('source', {})
         table = source.get('table', '')
+        
+        # Also check the topic name as fallback (extracted from table name in process_message)
+        if not table:
+            # Check if we can infer from after_data structure
+            after_data = record.get('after', {})
+            if not after_data:
+                after_data = record.get('payload', {}).get('after', {})
 
         # Default primary key patterns
         pk_patterns = {
             'customers': ['customer_id'],
             'products': ['product_id'],
             'orders': ['order_id'],
-            'order_items': ['order_item_id'],
-            'inventory_transactions': ['transaction_id']
+            'order_items': ['order_item_id'],  # Note: might need composite key
+            'inventory_transactions': ['transaction_id'],
+            'linkedin_jobs': ['job_id']
         }
 
-        return pk_patterns.get(table, ['id'])
+        pk = pk_patterns.get(table, ['id'])
+        
+        # If using default 'id' and it doesn't exist, try common patterns
+        if pk == ['id']:
+            after_data = record.get('after', {})
+            if not after_data:
+                after_data = record.get('payload', {}).get('after', {})
+            
+            # Try common ID field names
+            for common_id in ['id', '_id', table + '_id', 'uuid']:
+                if after_data and common_id in after_data:
+                    return [common_id]
+    
+        return pk
 
     def close(self):
         """Close Snowflake connection"""

@@ -27,7 +27,8 @@ The PostgreSQL connector is configured with the following key settings:
 - **Tables**: customers, products, orders, order_items, inventory_transactions
 
 ### Data Formats
-- **Key/Value Converter**: Avro (with Schema Registry)
+- **Key/Value Converter**: JSON (JsonConverter)
+- **Schema Registry**: Available but not required for JSON format
 - **Decimal Handling**: Converted to double
 - **Tombstones**: Enabled for delete events
 

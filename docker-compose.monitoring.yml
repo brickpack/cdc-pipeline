@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Monitoring stack for CDC pipeline
 # Usage: docker-compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
 
@@ -82,24 +80,26 @@ services:
     restart: unless-stopped
 
   # JMX Exporter for Kafka metrics
-  kafka-jmx-exporter:
-    image: sscaling/jmx-prometheus-exporter:latest
-    hostname: kafka-jmx-exporter
-    container_name: kafka-jmx-exporter
-    ports:
-      - "5556:5556"
-    volumes:
-      - ./monitoring/jmx-exporter/kafka-config.yml:/etc/jmx-exporter/config.yml
-    environment:
-      SERVICE_PORT: 5556
-      JMX_HOST: kafka
-      JMX_PORT: 9101
-    command: 5556 /etc/jmx-exporter/config.yml
-    depends_on:
-      - kafka
-    networks:
-      - cdc-network
-    restart: unless-stopped
+  # Note: This requires Kafka's JMX to be accessible. For remote JMX to work,
+  # Kafka's KAFKA_JMX_HOSTNAME should be set to 0.0.0.0 or kafka (not localhost).
+  # Currently disabled due to JMX binding limitations. Kafka UI provides basic metrics.
+  # kafka-jmx-exporter:
+  #   image: sscaling/jmx-prometheus-exporter:latest
+  #   hostname: kafka-jmx-exporter
+  #   container_name: kafka-jmx-exporter
+  #   ports:
+  #     - "5556:5556"
+  #   volumes:
+  #     - ./monitoring/jmx-exporter/kafka-config.yml:/etc/jmx-exporter/config.yml
+  #   environment:
+  #     SERVICE_PORT: 5556
+  #     JMX_HOST: kafka
+  #     JMX_PORT: 9101
+  #   depends_on:
+  #     - kafka
+  #   networks:
+  #     - cdc-network
+  #   restart: unless-stopped
 
   # Node Exporter - System metrics
   node-exporter:
@@ -137,14 +137,8 @@ services:
       - cdc-network
     restart: unless-stopped
 
-networks:
-  cdc-network:
-    external: true
-
 volumes:
   prometheus-data:
   grafana-data:
   loki-data:
   alertmanager-data:
-  consumer-logs:
-    external: true

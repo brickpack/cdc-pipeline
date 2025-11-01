@@ -4,13 +4,14 @@ This directory contains the Python consumer application that reads CDC events fr
 
 ## Features
 
-- **Avro Deserialization**: Reads Avro-encoded messages with Schema Registry
+- **JSON Message Support**: Reads JSON-encoded CDC messages from Kafka
 - **Batch Processing**: Configurable batch sizes for efficient loading
-- **Operation Support**: Handles INSERT, UPDATE, and DELETE operations
-- **Error Handling**: Comprehensive error handling and retry logic
-- **Idempotent Writes**: Uses MERGE operations to prevent duplicates
+- **Operation Support**: Handles INSERT, UPDATE, and DELETE operations correctly
+- **Error Handling**: Comprehensive error handling with validation
+- **Idempotent Writes**: Uses proper UPDATE statements to prevent duplicates
 - **Auto Schema Management**: Automatically creates tables if they don't exist
 - **Graceful Shutdown**: Handles signals and flushes buffers on shutdown
+- **Primary Key Detection**: Smart primary key detection with fallback patterns
 
 ## Files
 
@@ -153,9 +154,14 @@ WHEN NOT MATCHED THEN INSERT (columns) VALUES (values)
 #### UPDATE (operation: 'u')
 ```sql
 UPDATE table
-SET col1 = val1, col2 = val2, ...
+SET col1 = val1, col2 = val2, ...,
+    _cdc_operation = 'u',
+    _cdc_timestamp = timestamp,
+    _cdc_source_lsn = lsn
 WHERE primary_key = value
 ```
+
+**Note**: The UPDATE operation correctly uses the primary key from the `after` data to ensure rows are matched properly. The consumer validates primary key existence and logs warnings when updates match zero rows.
 
 #### DELETE (operation: 'd')
 ```sql

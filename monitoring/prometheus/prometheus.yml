@@ -26,11 +26,13 @@ scrape_configs:
       - targets: ['localhost:9090']
 
   # Kafka JMX metrics
-  - job_name: 'kafka'
-    static_configs:
-      - targets: ['kafka-jmx-exporter:5556']
-        labels:
-          service: 'kafka'
+  # Disabled - requires Kafka JMX to be accessible remotely
+  # Uncomment if kafka-jmx-exporter is enabled and Kafka's KAFKA_JMX_HOSTNAME is set to 0.0.0.0
+  # - job_name: 'kafka'
+  #   static_configs:
+  #     - targets: ['kafka-jmx-exporter:5556']
+  #       labels:
+  #         service: 'kafka'
 
   # Kafka Connect metrics
   - job_name: 'kafka-connect'
