@@ -62,17 +62,17 @@ RapidAPI JSearch LinkedIn
 
 ### Running with Docker Compose
 
-The service is already included in the main `docker-compose.yml`:
+The service is already included in the main `docker compose.yml`:
 
 ```bash
 # Start entire stack (includes LinkedIn ingestion)
-docker-compose up -d
+docker compose up -d
 
 # View ingestion logs
-docker-compose logs -f linkedin-ingestion
+docker compose logs -f linkedin-ingestion
 
 # Restart just the ingestion service
-docker-compose restart linkedin-ingestion
+docker compose restart linkedin-ingestion
 ```
 
 ### Running Standalone
@@ -246,7 +246,7 @@ The JSearch API returns job data in this format:
 
 ```bash
 # View service logs
-docker-compose logs -f linkedin-ingestion
+docker compose logs -f linkedin-ingestion
 
 # Check last ingestion time
 docker exec postgres psql -U postgres -d sourcedb \
@@ -297,7 +297,7 @@ docker exec kafka kafka-console-consumer \
 **Check**:
 1. API response:
    ```bash
-   docker-compose logs linkedin-ingestion | grep "Fetched"
+   docker compose logs linkedin-ingestion | grep "Fetched"
    ```
 
 2. Database connection:
@@ -316,7 +316,7 @@ docker exec kafka kafka-console-consumer \
 **Solution**:
 1. Ensure PostgreSQL is running:
    ```bash
-   docker-compose ps postgres
+   docker compose ps postgres
    ```
 
 2. Check credentials in `.env`
@@ -453,6 +453,6 @@ Potential improvements:
 ## Support
 
 For issues:
-1. Check logs: `docker-compose logs linkedin-ingestion`
+1. Check logs: `docker compose logs linkedin-ingestion`
 2. Review troubleshooting section above
 3. Open GitHub issue with logs and configuration (redact sensitive data)

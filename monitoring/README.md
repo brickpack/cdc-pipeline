@@ -11,7 +11,7 @@ Comprehensive monitoring and observability for the CDC pipeline using Prometheus
 - **Scrape Interval**: 15 seconds
 
 ### Grafana
-- **Port**: 3000
+- **Port**: 3001
 - **Purpose**: Visualization and dashboards
 - **Default Login**: admin / admin
 - **Features**: Pre-configured dashboards and datasources
@@ -59,7 +59,7 @@ docker-compose ps
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
-| Grafana | http://localhost:3000 | admin / admin |
+| Grafana | http://localhost:3001 | admin / admin |
 | Prometheus | http://localhost:9090 | - |
 | AlertManager | http://localhost:9093 | - |
 | Kafka UI | http://localhost:8080 | - |
@@ -79,7 +79,7 @@ docker-compose logs -f prometheus
 
 ### First Login
 
-1. Navigate to http://localhost:3000
+1. Navigate to http://localhost:3001
 2. Login with `admin` / `admin`
 3. Change password when prompted (or skip)
 
