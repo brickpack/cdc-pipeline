@@ -79,11 +79,9 @@ SCHEDULE_INTERVAL_MINUTES=60
 
 ### 3. Configure Snowflake (Optional)
 
-If you want to load data into Snowflake, you have two authentication options:
+If you want to load data into Snowflake, edit `.env` with your credentials.
 
-**Option A: Password Authentication**
-
-Edit `.env` with your credentials:
+**Option A: Password Authentication** (not recommended for production)
 
 ```bash
 SNOWFLAKE_ACCOUNT=your_account
@@ -94,26 +92,21 @@ SNOWFLAKE_SCHEMA=PUBLIC
 SNOWFLAKE_WAREHOUSE=COMPUTE_WH
 ```
 
-**Option B: Private Key Authentication (Recommended for Production)**
-
-For enhanced security, use private key authentication:
-
-1. Generate a key pair (see [keys/README.md](keys/README.md) for detailed instructions)
-2. Register the public key with Snowflake
-3. Edit `.env`:
+**Option B: Private Key Authentication** (recommended)
 
 ```bash
-SNOWFLAKE_ACCOUNT=your_account.region
+SNOWFLAKE_ACCOUNT=your_account
 SNOWFLAKE_USER=your_username
-SNOWFLAKE_PRIVATE_KEY_HOST_PATH=/path/to/your/snowflake_key.p8
+# Path to your existing private key (e.g., in ~/.ssh/)
+SNOWFLAKE_PRIVATE_KEY_HOST_PATH=/Users/your_username/.ssh/snowflake_key.p8
 SNOWFLAKE_PRIVATE_KEY_PATH=/app/keys/snowflake_key.p8
-SNOWFLAKE_PRIVATE_KEY_PASSPHRASE=your_passphrase  # Leave empty if no passphrase
+SNOWFLAKE_PRIVATE_KEY_PASSPHRASE=
 SNOWFLAKE_DATABASE=CDC_DB
 SNOWFLAKE_SCHEMA=PUBLIC
 SNOWFLAKE_WAREHOUSE=COMPUTE_WH
 ```
 
-The pipeline will automatically detect and use private key authentication if configured.
+Note: The private key should already exist on your system (e.g., in your `~/.ssh/` directory). No need to copy it to the repo.
 
 ### 4. Test Locally (Without Snowflake)
 
@@ -505,7 +498,7 @@ The repository is configured to ignore sensitive files:
 # Environment variables with credentials
 .env
 
-# Snowflake private keys and certificates
+# Snowflake private keys and certificates (if accidentally copied to repo)
 keys/
 *.p8
 *.pem
@@ -516,7 +509,15 @@ keys/
 connectors/postgres-connector.json
 ```
 
+**Important**:
+
+- Store your Snowflake private keys in your system's SSH directory (e.g., `~/.ssh/snowflake_key.p8`)
+- Never copy private keys into the repository directory
+- The `.env` file should only reference the path to your existing key
+- The repository's `keys/` directory is ignored to prevent accidental commits, but you shouldn't use it
+
 **Always verify** before committing:
+
 ```bash
 git status --ignored
 ```
