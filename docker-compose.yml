@@ -72,9 +72,13 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: sourcedb
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-sourcedb}
+      DEBEZIUM_USER: ${DEBEZIUM_USER:-debezium}
+      DEBEZIUM_PASSWORD: ${DEBEZIUM_PASSWORD:-debezium_password}
+      # Enable logical replication for Debezium
+      POSTGRES_INITDB_ARGS: "-c wal_level=logical"
     command:
       - "postgres"
       - "-c"
@@ -160,9 +164,9 @@ services:
       # PostgreSQL configuration
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
-      POSTGRES_DB: sourcedb
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-sourcedb}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       # Search configuration
       SEARCH_QUERIES: ${SEARCH_QUERIES:-software engineer,data engineer,python developer}
       SEARCH_LOCATION: ${SEARCH_LOCATION:-United States}
@@ -212,8 +216,10 @@ services:
     volumes:
       - ./consumer:/app
       - consumer-logs:/var/log/cdc-consumer
-      # Mount Snowflake private key (if using key-pair authentication)
-      - ${SNOWFLAKE_PRIVATE_KEY_HOST_PATH:-./keys/snowflake_key.p8}:${SNOWFLAKE_PRIVATE_KEY_PATH:-/app/keys/snowflake_key.p8}:ro
+      # Mount Snowflake private key from host SSH directory (if configured)
+      # The path on the left comes from SNOWFLAKE_PRIVATE_KEY_HOST_PATH in .env
+      # The path on the right is SNOWFLAKE_PRIVATE_KEY_PATH in .env
+      - ${SNOWFLAKE_PRIVATE_KEY_HOST_PATH}:${SNOWFLAKE_PRIVATE_KEY_PATH}:ro
     networks:
       - cdc-network
     restart: unless-stopped

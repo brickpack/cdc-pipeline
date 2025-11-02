@@ -5,7 +5,26 @@ set -e
 
 CONNECT_HOST="${CONNECT_HOST:-localhost}"
 CONNECT_PORT="${CONNECT_PORT:-8083}"
+CONNECTOR_TEMPLATE="postgres-connector.template.json"
 CONNECTOR_CONFIG="postgres-connector.json"
+
+# Load environment variables from .env if it exists
+if [ -f ../.env ]; then
+    set -a
+    source ../.env
+    set +a
+fi
+
+# Set defaults for environment variables
+export DEBEZIUM_USER="${DEBEZIUM_USER:-debezium}"
+export DEBEZIUM_PASSWORD="${DEBEZIUM_PASSWORD:-debezium_password}"
+export POSTGRES_DB="${POSTGRES_DB:-sourcedb}"
+
+# Generate connector config from template
+echo "Generating connector configuration from template..."
+envsubst < "$CONNECTOR_TEMPLATE" > "$CONNECTOR_CONFIG"
+echo "✓ Configuration generated"
+echo ""
 
 echo "Waiting for Kafka Connect to be ready..."
 until curl -f -s "http://${CONNECT_HOST}:${CONNECT_PORT}/" > /dev/null; do

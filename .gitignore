@@ -222,6 +222,9 @@ keys/
 *.key
 *.crt
 
+# Generated connector configurations
+connectors/postgres-connector.json
+
 # macOS
 .DS_Store
 
